@@ -29,67 +29,96 @@ RegisterNumber:  212224040136
 
 ```
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.cluster import KMeans
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import r2_score, mean_absolute_error
 
-data = pd.read_csv("/content/Mall_Customers.csv")
+df = pd.read_csv("/content/weather-station-eee-block_2024_07_13 (1).csv")
+df.columns = df.columns.str.strip()
 
-print(data.head())
-print(data.info())
-print(data.isnull().sum())
+df['time'] = pd.to_datetime(df['time'])
+df = df.sort_values('time')
 
-wcss = []
-for i in range(1, 11):
-    kmeans = KMeans(n_clusters=i, init="k-means++")
-    kmeans.fit(data.iloc[:, 3:5])
-    wcss.append(kmeans.inertia_)
+df = df.interpolate()
 
-plt.plot(range(1, 11), wcss)
-plt.xlabel("Number of Clusters")
-plt.ylabel("WCSS")
-plt.title("Elbow Method")
+df['hour'] = df['time'].dt.hour
+df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
+df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
+
+targets = ['tem', 'pm2_5', 'tsr']
+for t in targets:
+    df[f'{t}_lag1'] = df[t].shift(1)
+
+df = df.dropna()
+
+features = ['hum', 'pressure', 'wind_speed', 'illumination', 'co2',
+            'hour_sin', 'hour_cos',
+            'tem_lag1', 'pm2_5_lag1', 'tsr_lag1']
+
+split = int(len(df) * 0.8)
+train = df.iloc[:split]
+test = df.iloc[split:]
+
+X_train = train[features]
+X_test = test[features]
+
+models = {}
+results = {}
+
+target_meta = {
+    'tem': ('Temperature', '°C', 'red'),
+    'pm2_5': ('PM2.5', 'µg/m³', 'green'),
+    'tsr': ('Solar Radiation', 'W/m²', 'orange')
+}
+
+for target in targets:
+    y_train = train[target]
+    y_test = test[target]
+
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+
+    preds = model.predict(X_test)
+
+    models[target] = model
+    results[target] = {
+        'actual': y_test.values,
+        'preds': preds,
+        'r2': r2_score(y_test, preds),
+        'mae': mean_absolute_error(y_test, preds)
+    }
+
+fig, axes = plt.subplots(3, 2, figsize=(16, 15))
+
+for i, target in enumerate(targets):
+    label, unit, color = target_meta[target]
+    res = results[target]
+
+    axes[i, 0].plot(res['actual'], label='Actual', color='black')
+    axes[i, 0].plot(res['preds'], label='Predicted', linestyle='--', color=color)
+
+    axes[i, 0].set_title(f"{label} (R2: {res['r2']:.2f}, MAE: {res['mae']:.2f})")
+    axes[i, 0].set_ylabel(unit)
+    axes[i, 0].legend()
+    axes[i, 0].grid(True)
+
+    importance = pd.Series(models[target].feature_importances_, index=features)
+    importance = importance.sort_values()
+
+    importance.plot(kind='barh', ax=axes[i, 1], color=color)
+    axes[i, 1].set_title(f"Key Drivers: {label}")
+
+plt.tight_layout()
 plt.show()
-
-km = KMeans(n_clusters=5, init='k-means++')
-y_pred = km.fit_predict(data.iloc[:, 3:5])
-
-data["cluster"] = y_pred
-
-df0 = data[data["cluster"] == 0]
-df1 = data[data["cluster"] == 1]
-df2 = data[data["cluster"] == 2]
-df3 = data[data["cluster"] == 3]
-df4 = data[data["cluster"] == 4]
-
-plt.scatter(df0["Annual Income (k$)"], df0["Spending Score (1-100)"], c="red", label="Cluster 0")
-plt.scatter(df1["Annual Income (k$)"], df1["Spending Score (1-100)"], c="black", label="Cluster 1")
-plt.scatter(df2["Annual Income (k$)"], df2["Spending Score (1-100)"], c="blue", label="Cluster 2")
-plt.scatter(df3["Annual Income (k$)"], df3["Spending Score (1-100)"], c="green", label="Cluster 3")
-plt.scatter(df4["Annual Income (k$)"], df4["Spending Score (1-100)"], c="magenta", label="Cluster 4")
-
-plt.xlabel("Annual Income (k$)")
-plt.ylabel("Spending Score (1-100)")
-plt.title("Customer Segments")
-plt.legend()
-
-plt.show()
-
 ```
 
 ## Output:
+<img width="1760" height="540" alt="image" src="https://github.com/user-attachments/assets/77f15d65-b9a5-4e51-bad5-9255a9a92c1c" />
 
-<img width="1056" height="429" alt="image" src="https://github.com/user-attachments/assets/d5c4c45a-3a6f-4b16-a3da-3e953882cf7e" />
+<img width="1744" height="495" alt="image" src="https://github.com/user-attachments/assets/db5c959b-5c87-4c57-9c78-c8836920a0ee" />
 
-<img width="1074" height="471" alt="image" src="https://github.com/user-attachments/assets/21791f82-65ad-4e9b-9b3d-1d7a48b2100a" />
-
-<img width="1084" height="669" alt="image" src="https://github.com/user-attachments/assets/5571c985-5501-4135-9607-eca6801ce622" />
-
-<img width="1198" height="750" alt="image" src="https://github.com/user-attachments/assets/396b3a80-2c16-4e39-ab12-9ab522bb34e5" />
-
-<img width="1406" height="724" alt="image" src="https://github.com/user-attachments/assets/4f42f656-144e-49eb-bbe3-96f6ade72478" />
-
-<img width="1290" height="750" alt="Screenshot 2026-03-17 193108" src="https://github.com/user-attachments/assets/11882dc8-8506-49cc-b4f5-f767e719f593" />
-
+<img width="1749" height="501" alt="image" src="https://github.com/user-attachments/assets/7c590f33-4248-4e88-a7ee-99ef8eac7b2f" />
 
 
 ## Result:
